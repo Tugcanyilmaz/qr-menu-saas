@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { QrCode, Sparkles, ShieldCheck, Zap, Smartphone, Utensils, ArrowRight, Store, Lock, LogIn } from 'lucide-react';
+import { QrCode, Sparkles, Smartphone, ArrowRight, Lock, LogIn } from 'lucide-react';
 
 export default function LandingPage() {
   return (
@@ -50,30 +50,6 @@ export default function LandingPage() {
               <LogIn className="w-5 h-5 text-indigo-400" />
               <span>Giriş Yap</span>
             </Link>
-          </div>
-
-          {/* Quick Demo Credentials Box */}
-          <div className="glass-panel p-6 max-w-2xl mx-auto rounded-2xl border-indigo-500/30 text-left text-xs text-slate-300 space-y-3">
-            <div className="flex items-center space-x-2 text-indigo-400 font-bold">
-              <Zap className="w-4 h-4 text-amber-400" />
-              <span>Tek Tıkla Hazır Demo Hesapları:</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 font-mono">
-              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                <p className="text-white font-bold mb-1 font-sans flex items-center justify-between">
-                  <span>Mavi Kafe & Bistro</span>
-                  <span className="text-[10px] text-emerald-400 font-mono font-normal">/mavi-kafe</span>
-                </p>
-                <p className="text-[11px] text-slate-400">Giriş: mavi@kafe.com / 123456</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                <p className="text-white font-bold mb-1 font-sans flex items-center justify-between">
-                  <span>Admin Hesabı</span>
-                  <span className="text-[10px] text-purple-400 font-mono font-normal">/admin</span>
-                </p>
-                <p className="text-[11px] text-slate-400">Giriş: admin@qrmenu.com / admin123</p>
-              </div>
-            </div>
           </div>
 
         </div>

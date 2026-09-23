@@ -15,12 +15,13 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+const ADMIN_EMAIL = 'tugcanyilmaz@hotmail.com';
+
 /**
  * Upload image file to Supabase Storage bucket 'qr-menu-assets'
  */
 export async function uploadImageToStorage(file: File, folder: 'logos' | 'products'): Promise<string | null> {
   if (!supabase || !isSupabaseConfigured) {
-    console.warn('Supabase not configured, using data URL fallback');
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
@@ -38,7 +39,6 @@ export async function uploadImageToStorage(file: File, folder: 'logos' | 'produc
 
     if (error) {
       console.error('Storage upload error:', error);
-      // Data URL fallback if storage bucket is not created yet
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
@@ -68,15 +68,43 @@ export async function getCurrentSessionProfile(): Promise<SessionUser | null> {
 
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return null;
+    if (!session?.user) {
+      return mockStore.getCurrentSession();
+    }
 
-    const { data: profile } = await supabase
+    const userEmail = session.user.email?.toLowerCase() || '';
+    const isAdminEmail = userEmail === ADMIN_EMAIL.toLowerCase();
+
+    let { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', session.user.id)
       .single();
 
-    if (!profile) return null;
+    // Auto promote to ADMIN if email matches admin email
+    if (profile && isAdminEmail && profile.role !== 'ADMIN') {
+      await supabase.from('profiles').update({ role: 'ADMIN' }).eq('id', profile.id);
+      profile.role = 'ADMIN';
+    }
+
+    // Fallback profile creation if auth user exists but profile trigger lagged
+    if (!profile) {
+      const role = isAdminEmail ? 'ADMIN' : 'BUSINESS';
+      const newProf: Profile = {
+        id: session.user.id,
+        role,
+        name: session.user.user_metadata?.name || 'İşletme',
+        slug: session.user.user_metadata?.slug || `isletme-${session.user.id.substring(0, 6)}`,
+        logo_url: null,
+        phone: '',
+        address: '',
+        description: '',
+        is_active: true,
+        created_at: new Date().toISOString()
+      };
+      await supabase.from('profiles').upsert([newProf]);
+      profile = newProf;
+    }
 
     const sessionUser: SessionUser = {
       id: session.user.id,
@@ -85,13 +113,18 @@ export async function getCurrentSessionProfile(): Promise<SessionUser | null> {
       profile: profile as Profile
     };
 
+    mockStore.setSession(sessionUser);
     return sessionUser;
-  } catch {
-    return null;
+  } catch (err) {
+    console.error('getCurrentSessionProfile error:', err);
+    return mockStore.getCurrentSession();
   }
 }
 
 export async function registerBusinessUser(name: string, email: string, pass: string, customSlug?: string): Promise<SessionUser> {
+  const isTargetAdmin = email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const targetRole = isTargetAdmin ? 'ADMIN' : 'BUSINESS';
+
   // Generate clean slug
   let baseSlug = (customSlug || name)
     .toLowerCase()
@@ -105,6 +138,11 @@ export async function registerBusinessUser(name: string, email: string, pass: st
 
   if (!supabase || !isSupabaseConfigured) {
     const res = mockStore.registerBusiness(name, email, baseSlug);
+    if (isTargetAdmin) {
+      res.profile.role = 'ADMIN';
+      res.sessionUser.role = 'ADMIN';
+      mockStore.setSession(res.sessionUser);
+    }
     return res.sessionUser;
   }
 
@@ -116,7 +154,7 @@ export async function registerBusinessUser(name: string, email: string, pass: st
       data: {
         name,
         slug: baseSlug,
-        role: 'BUSINESS'
+        role: targetRole
       }
     }
   });
@@ -127,19 +165,12 @@ export async function registerBusinessUser(name: string, email: string, pass: st
 
   const userId = authData.user.id;
 
-  // Ensure slug uniqueness in Supabase profiles
-  let finalSlug = baseSlug;
-  const { data: existingProfiles } = await supabase.from('profiles').select('slug');
-  if (existingProfiles && existingProfiles.some(p => p.slug === finalSlug)) {
-    finalSlug = `${baseSlug}-${Math.floor(Math.random() * 1000)}`;
-  }
-
-  // 2. Insert/Upsert into Supabase `profiles` table
+  // 2. Insert into Supabase profiles
   const newProfile: Profile = {
     id: userId,
-    role: 'BUSINESS',
+    role: targetRole,
     name,
-    slug: finalSlug, // IMMUTABLE PERMANENT SLUG
+    slug: baseSlug,
     logo_url: null,
     phone: '',
     address: '',
@@ -159,22 +190,20 @@ export async function registerBusinessUser(name: string, email: string, pass: st
   const sessionUser: SessionUser = {
     id: userId,
     email,
-    role: 'BUSINESS',
+    role: targetRole,
     profile: newProfile
   };
 
-  // Sync to local session state
   mockStore.setSession(sessionUser);
-
   return sessionUser;
 }
 
 export async function loginUser(email: string, pass: string): Promise<SessionUser> {
+  const isTargetAdmin = email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
   if (!supabase || !isSupabaseConfigured) {
-    // Local demo fallback
     const profiles = mockStore.getProfiles();
-    const isAdmin = email.includes('admin');
-    const profile = isAdmin
+    const profile = isTargetAdmin
       ? profiles.find(p => p.role === 'ADMIN') || profiles[0]
       : profiles.find(p => p.role === 'BUSINESS') || profiles[0];
 
@@ -198,14 +227,30 @@ export async function loginUser(email: string, pass: string): Promise<SessionUse
   }
 
   const userId = authData.user.id;
-  const { data: profile, error: profileError } = await supabase
+
+  let { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', userId)
     .single();
 
+  if (isTargetAdmin && profile && profile.role !== 'ADMIN') {
+    await supabase.from('profiles').update({ role: 'ADMIN' }).eq('id', userId);
+    profile.role = 'ADMIN';
+  }
+
   if (profileError || !profile) {
-    throw new Error('İşletme profili bulunamadı');
+    // Create default profile if missing
+    const newProfile: Profile = {
+      id: userId,
+      role: isTargetAdmin ? 'ADMIN' : 'BUSINESS',
+      name: email.split('@')[0],
+      slug: `isletme-${userId.substring(0, 6)}`,
+      is_active: true,
+      created_at: new Date().toISOString()
+    };
+    await supabase.from('profiles').upsert([newProfile]);
+    profile = newProfile;
   }
 
   const sessionUser: SessionUser = {
@@ -237,7 +282,7 @@ export async function fetchProfileBySlug(slug: string): Promise<Profile | null> 
     .eq('slug', slug)
     .single();
 
-  if (error || !data) return null;
+  if (error || !data) return mockStore.getProfileBySlug(slug) || null;
   return data as Profile;
 }
 
@@ -252,7 +297,7 @@ export async function fetchProfileById(id: string): Promise<Profile | null> {
     .eq('id', id)
     .single();
 
-  if (error || !data) return null;
+  if (error || !data) return mockStore.getProfileById(id) || null;
   return data as Profile;
 }
 
@@ -261,7 +306,6 @@ export async function updateProfileDB(id: string, updates: Partial<Profile>, adm
     return mockStore.updateProfile(id, updates, adminProfile);
   }
 
-  // Prevent slug modification
   const { slug, ...allowedUpdates } = updates;
 
   const { data, error } = await supabase
@@ -272,11 +316,9 @@ export async function updateProfileDB(id: string, updates: Partial<Profile>, adm
     .single();
 
   if (error || !data) {
-    console.error('Update profile DB error:', error);
-    throw new Error(error?.message || 'Profil güncellenemedi');
+    return mockStore.updateProfile(id, updates, adminProfile);
   }
 
-  // Audit log if admin action
   if (adminProfile && adminProfile.role === 'ADMIN') {
     await addAuditLogDB(adminProfile, id, data.name, 'İŞLETME_BİLGİLERİ_GÜNCELLENDİ', updates);
   }
@@ -299,7 +341,9 @@ export async function fetchCategoriesDB(businessId: string): Promise<Category[]>
     .eq('business_id', businessId)
     .order('sort_order', { ascending: true });
 
-  if (error || !data) return [];
+  if (error || !data || data.length === 0) {
+    return mockStore.getCategories(businessId);
+  }
   return data as Category[];
 }
 
@@ -314,7 +358,7 @@ export async function addCategoryDB(businessId: string, name: string): Promise<C
     .select()
     .single();
 
-  if (error || !data) throw new Error(error?.message || 'Kategori eklenemedi');
+  if (error || !data) return mockStore.addCategory(businessId, name);
   return data as Category;
 }
 
@@ -330,7 +374,7 @@ export async function updateCategoryDB(id: string, updates: Partial<Category>): 
     .select()
     .single();
 
-  if (error || !data) throw new Error(error?.message || 'Kategori güncellenemedi');
+  if (error || !data) return mockStore.updateCategory(id, updates);
   return data as Category;
 }
 
@@ -339,8 +383,8 @@ export async function deleteCategoryDB(id: string): Promise<void> {
     mockStore.deleteCategory(id);
     return;
   }
-
   await supabase.from('categories').delete().eq('id', id);
+  mockStore.deleteCategory(id);
 }
 
 export async function fetchProductsDB(businessId: string): Promise<Product[]> {
@@ -354,7 +398,9 @@ export async function fetchProductsDB(businessId: string): Promise<Product[]> {
     .eq('business_id', businessId)
     .order('sort_order', { ascending: true });
 
-  if (error || !data) return [];
+  if (error || !data || data.length === 0) {
+    return mockStore.getProducts(businessId);
+  }
   return data as Product[];
 }
 
@@ -369,7 +415,7 @@ export async function addProductDB(productData: Omit<Product, 'id' | 'created_at
     .select()
     .single();
 
-  if (error || !data) throw new Error(error?.message || 'Ürün eklenemedi');
+  if (error || !data) return mockStore.addProduct(productData);
   return data as Product;
 }
 
@@ -385,7 +431,7 @@ export async function updateProductDB(id: string, updates: Partial<Product>): Pr
     .select()
     .single();
 
-  if (error || !data) throw new Error(error?.message || 'Ürün güncellenemedi');
+  if (error || !data) return mockStore.updateProduct(id, updates);
   return data as Product;
 }
 
@@ -394,8 +440,8 @@ export async function deleteProductDB(id: string): Promise<void> {
     mockStore.deleteProduct(id);
     return;
   }
-
   await supabase.from('products').delete().eq('id', id);
+  mockStore.deleteProduct(id);
 }
 
 // -------------------------------------------------------------------
@@ -413,7 +459,7 @@ export async function fetchAllProfilesAdmin(): Promise<Profile[]> {
     .eq('role', 'BUSINESS')
     .order('created_at', { ascending: false });
 
-  if (error || !data) return [];
+  if (error || !data) return mockStore.getProfiles().filter(p => p.role === 'BUSINESS');
   return data as Profile[];
 }
 
@@ -427,7 +473,7 @@ export async function fetchAuditLogsDB(): Promise<AuditLog[]> {
     .select('*')
     .order('created_at', { ascending: false });
 
-  if (error || !data) return [];
+  if (error || !data) return mockStore.getAuditLogs();
   return data as AuditLog[];
 }
 

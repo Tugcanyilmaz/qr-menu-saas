@@ -9,6 +9,7 @@ import { Save, Lock, Building, Phone, MapPin, FileText, CheckCircle2, Loader2 } 
 
 export default function DashboardOverviewPage() {
   const [session, setSession] = useState<SessionUser | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
   const [name, setName] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [address, setAddress] = useState<string>('');
@@ -28,9 +29,19 @@ export default function DashboardOverviewPage() {
         setDescription(s.profile.description || '');
         setLogoUrl(s.profile.logo_url || '');
       }
+      setLoading(false);
     }
     load();
   }, []);
+
+  if (loading) {
+    return (
+      <div className="p-16 text-center text-indigo-400 text-sm font-medium flex items-center justify-center space-x-2">
+        <Loader2 className="w-6 h-6 animate-spin" />
+        <span>İşletme paneli ve QR Kod hazırlanıyor...</span>
+      </div>
+    );
+  }
 
   if (!session) return null;
 

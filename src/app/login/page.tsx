@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { loginUser } from '@/lib/supabaseClient';
 import Link from 'next/link';
-import { LogIn, Sparkles, Store, ShieldAlert, KeyRound, Mail, ArrowRight, Loader2 } from 'lucide-react';
+import { LogIn, KeyRound, Mail, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,11 +39,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleDemoFill = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-  };
-
   return (
     <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
@@ -56,7 +51,6 @@ export default function LoginPage() {
               <LogIn className="w-6 h-6 text-white" />
             </div>
             <h2 className="text-2xl font-extrabold text-white">Hesabınıza Giriş Yapın</h2>
-            <p className="text-xs text-slate-400 mt-1">İşletme veya Admin panelinize erişin</p>
           </div>
 
           {error && (
@@ -119,40 +113,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Quick Form Fill helper */}
-          <div className="mt-8 pt-6 border-t border-slate-800">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3 text-center">
-              Örnek Doldurma Yardımcısı
-            </p>
-            
-            <div className="grid grid-cols-1 gap-2">
-              <button
-                type="button"
-                onClick={() => handleDemoFill('mavi@kafe.com', '123456')}
-                className="w-full p-2.5 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/30 rounded-xl text-left flex items-center justify-between text-xs text-indigo-200 transition-colors"
-              >
-                <span className="flex items-center space-x-2">
-                  <Store className="w-4 h-4 text-indigo-400" />
-                  <span className="font-medium">Mavi Kafe Giriş Bilgileri</span>
-                </span>
-                <span className="text-[10px] font-mono bg-indigo-500/20 px-2 py-0.5 rounded text-indigo-300">Doldur</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleDemoFill('admin@qrmenu.com', 'admin123')}
-                className="w-full p-2.5 bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 rounded-xl text-left flex items-center justify-between text-xs text-purple-200 transition-colors"
-              >
-                <span className="flex items-center space-x-2">
-                  <ShieldAlert className="w-4 h-4 text-purple-400" />
-                  <span className="font-medium">Admin Giriş Bilgileri</span>
-                </span>
-                <span className="text-[10px] font-mono bg-purple-500/20 px-2 py-0.5 rounded text-purple-300">Doldur</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center text-xs text-slate-400">
+          <div className="mt-8 text-center text-xs text-slate-400 border-t border-slate-800/80 pt-4">
             Hesabınız yok mu?{' '}
             <Link href="/register" className="text-indigo-400 font-semibold hover:underline">
               Hemen Ücretsiz Kaydolun
