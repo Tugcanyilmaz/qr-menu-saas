@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { mockStore } from '@/lib/mockStore';
+import { getCurrentSessionProfile, logoutUser } from '@/lib/supabaseClient';
 import { SessionUser } from '@/lib/types';
-import { QrCode, Store, ShieldAlert, LogOut, UserCheck, Sparkles, LayoutDashboard } from 'lucide-react';
+import { QrCode, Store, ShieldAlert, LogOut, Sparkles, LayoutDashboard, LogIn } from 'lucide-react';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -13,17 +13,26 @@ export default function Navbar() {
   const [session, setSession] = useState<SessionUser | null>(null);
 
   useEffect(() => {
-    setSession(mockStore.getCurrentSession());
+    async function loadSession() {
+      const active = await getCurrentSessionProfile();
+      setSession(active);
+    }
+    loadSession();
   }, [pathname]);
 
-  const handleLogout = () => {
-    mockStore.setSession(null);
+  const handleLogout = async () => {
+    await logoutUser();
     setSession(null);
-    router.push('/login');
+    router.push('/');
   };
 
   // Hide main navbar on public customer menu route
-  const isPublicMenu = pathname !== '/' && !pathname.startsWith('/dashboard') && !pathname.startsWith('/admin') && !pathname.startsWith('/login') && !pathname.startsWith('/register');
+  const isPublicMenu = pathname !== '/' &&
+    !pathname.startsWith('/dashboard') &&
+    !pathname.startsWith('/admin') &&
+    !pathname.startsWith('/login') &&
+    !pathname.startsWith('/register');
+
   if (isPublicMenu) return null;
 
   return (
@@ -77,7 +86,7 @@ export default function Navbar() {
                   <span className="sm:hidden">Panel</span>
                 </Link>
 
-                {/* Live Menu Demo Link */}
+                {/* Live Menu Link */}
                 <Link
                   href={`/${session.profile.slug}`}
                   target="_blank"
@@ -87,7 +96,7 @@ export default function Navbar() {
                   <span>Canlı Menü</span>
                 </Link>
 
-                {/* User Dropdown / Logout */}
+                {/* User Info & Logout */}
                 <div className="flex items-center pl-2 border-l border-slate-800 space-x-2">
                   <div className="hidden md:block text-right">
                     <p className="text-xs font-semibold text-slate-200">{session.profile.name}</p>
@@ -97,9 +106,10 @@ export default function Navbar() {
                   <button
                     onClick={handleLogout}
                     title="Çıkış Yap"
-                    className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                    className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors flex items-center space-x-1 text-xs font-semibold"
                   >
                     <LogOut className="w-4 h-4" />
+                    <span className="hidden sm:inline">Çıkış Yap</span>
                   </button>
                 </div>
               </>
@@ -107,14 +117,15 @@ export default function Navbar() {
               <>
                 <Link
                   href="/login"
-                  className="text-sm font-medium text-slate-300 hover:text-white px-3 py-1.5 rounded-lg hover:bg-slate-800/50 transition-colors"
+                  className="text-xs sm:text-sm font-semibold text-slate-300 hover:text-white px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors flex items-center space-x-1.5"
                 >
-                  Giriş Yap
+                  <LogIn className="w-4 h-4 text-indigo-400" />
+                  <span>Giriş Yap</span>
                 </Link>
 
                 <Link
                   href="/register"
-                  className="gradient-btn px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center space-x-1.5 shadow-md"
+                  className="gradient-btn px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center space-x-1.5 shadow-md"
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>Ücretsiz Kaydol</span>

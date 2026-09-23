@@ -2,65 +2,46 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { mockStore } from '@/lib/mockStore';
+import { loginUser } from '@/lib/supabaseClient';
 import Link from 'next/link';
-import { LogIn, Sparkles, Store, ShieldAlert, KeyRound, Mail, ArrowRight } from 'lucide-react';
+import { LogIn, Sparkles, Store, ShieldAlert, KeyRound, Mail, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState<string>('mavi@kafe.com');
-  const [password, setPassword] = useState<string>('123456');
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email.trim() || !password) {
+      setError('Lütfen e-posta ve şifrenizi girin.');
+      return;
+    }
+
+    setLoading(true);
     setError('');
 
-    // Check mock store profiles
-    const profiles = mockStore.getProfiles();
-    
-    // Quick role check based on email input
-    if (email.includes('admin')) {
-      const admin = profiles.find(p => p.role === 'ADMIN');
-      if (admin) {
-        mockStore.setSession({
-          id: admin.id,
-          email,
-          role: 'ADMIN',
-          profile: admin
-        });
+    try {
+      const sessionUser = await loginUser(email, password);
+      
+      if (sessionUser.role === 'ADMIN') {
         router.push('/admin');
-        return;
+      } else {
+        router.push('/dashboard');
       }
+    } catch (err: any) {
+      console.error('Login failed:', err);
+      setError(err.message || 'Giriş yapılamadı. Şifre veya e-posta hatalı olabilir.');
+    } finally {
+      setLoading(false);
     }
-
-    // Default business login match
-    const business = profiles.find(p => p.role === 'BUSINESS') || profiles[0];
-    mockStore.setSession({
-      id: business.id,
-      email,
-      role: 'BUSINESS',
-      profile: business
-    });
-    router.push('/dashboard');
   };
 
-  const handleQuickLogin = (businessId: string, role: 'BUSINESS' | 'ADMIN') => {
-    const profile = mockStore.getProfileById(businessId);
-    if (!profile) return;
-
-    mockStore.setSession({
-      id: profile.id,
-      email: role === 'ADMIN' ? 'admin@qrmenu.com' : `${profile.slug}@kafe.com`,
-      role,
-      profile
-    });
-
-    if (role === 'ADMIN') {
-      router.push('/admin');
-    } else {
-      router.push('/dashboard');
-    }
+  const handleDemoFill = (demoEmail: string, demoPass: string) => {
+    setEmail(demoEmail);
+    setPassword(demoPass);
   };
 
   return (
@@ -121,40 +102,52 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className="w-full gradient-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2 mt-2"
+              disabled={loading}
+              className="w-full gradient-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2 mt-2 shadow-lg disabled:opacity-60"
             >
-              <span>Giriş Yap</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Giriş Yapılıyor...</span>
+                </>
+              ) : (
+                <>
+                  <span>Giriş Yap</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 
-          {/* Quick Demo Logins Bar */}
+          {/* Quick Form Fill helper */}
           <div className="mt-8 pt-6 border-t border-slate-800">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-3 text-center">
-              Hızlı Demo Girişi (Tek Tıkla Giriş Yapın)
+              Örnek Doldurma Yardımcısı
             </p>
             
             <div className="grid grid-cols-1 gap-2">
               <button
-                onClick={() => handleQuickLogin('bus-001', 'BUSINESS')}
+                type="button"
+                onClick={() => handleDemoFill('mavi@kafe.com', '123456')}
                 className="w-full p-2.5 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/30 rounded-xl text-left flex items-center justify-between text-xs text-indigo-200 transition-colors"
               >
                 <span className="flex items-center space-x-2">
                   <Store className="w-4 h-4 text-indigo-400" />
-                  <span className="font-medium">Mavi Kafe Girişi (İşletme)</span>
+                  <span className="font-medium">Mavi Kafe Giriş Bilgileri</span>
                 </span>
-                <span className="text-[10px] font-mono bg-indigo-500/20 px-2 py-0.5 rounded text-indigo-300">BUSINESS</span>
+                <span className="text-[10px] font-mono bg-indigo-500/20 px-2 py-0.5 rounded text-indigo-300">Doldur</span>
               </button>
 
               <button
-                onClick={() => handleQuickLogin('admin-001', 'ADMIN')}
+                type="button"
+                onClick={() => handleDemoFill('admin@qrmenu.com', 'admin123')}
                 className="w-full p-2.5 bg-purple-950/40 hover:bg-purple-900/60 border border-purple-500/30 rounded-xl text-left flex items-center justify-between text-xs text-purple-200 transition-colors"
               >
                 <span className="flex items-center space-x-2">
                   <ShieldAlert className="w-4 h-4 text-purple-400" />
-                  <span className="font-medium">Admin Girişi (Yönetici)</span>
+                  <span className="font-medium">Admin Giriş Bilgileri</span>
                 </span>
-                <span className="text-[10px] font-mono bg-purple-500/20 px-2 py-0.5 rounded text-purple-300">ADMIN</span>
+                <span className="text-[10px] font-mono bg-purple-500/20 px-2 py-0.5 rounded text-purple-300">Doldur</span>
               </button>
             </div>
           </div>

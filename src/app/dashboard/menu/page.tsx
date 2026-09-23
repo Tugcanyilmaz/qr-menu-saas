@@ -1,15 +1,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { mockStore } from '@/lib/mockStore';
+import {
+  getCurrentSessionProfile,
+  fetchCategoriesDB,
+  fetchProductsDB,
+  addCategoryDB,
+  updateCategoryDB,
+  deleteCategoryDB,
+  addProductDB,
+  updateProductDB,
+  deleteProductDB
+} from '@/lib/supabaseClient';
 import { SessionUser, Category, Product } from '@/lib/types';
 import ImageUploader from '@/components/ImageUploader';
-import { Plus, Edit2, Trash2, Eye, EyeOff, Utensils, Tag, Image as ImageIcon, Check, X, ArrowUpDown, DollarSign } from 'lucide-react';
+import { Plus, Edit2, Trash2, Eye, EyeOff, Utensils, Tag, X, Loader2 } from 'lucide-react';
 
 export default function MenuManagementPage() {
   const [session, setSession] = useState<SessionUser | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'PRODUCTS' | 'CATEGORIES'>('PRODUCTS');
 
   // Category Modal State
@@ -26,21 +37,28 @@ export default function MenuManagementPage() {
   const [productCategoryId, setProductCategoryId] = useState<string>('');
   const [productImageUrl, setProductImageUrl] = useState<string>('');
   const [productActive, setProductActive] = useState<boolean>(true);
+  const [savingItem, setSavingItem] = useState<boolean>(false);
 
   // Filter Category State
   const [filterCategoryId, setFilterCategoryId] = useState<string>('ALL');
 
   useEffect(() => {
-    const s = mockStore.getCurrentSession();
-    if (s) {
-      setSession(s);
-      loadData(s.profile.id);
+    async function init() {
+      const s = await getCurrentSessionProfile();
+      if (s) {
+        setSession(s);
+        await loadData(s.profile.id);
+      }
+      setLoading(false);
     }
+    init();
   }, []);
 
-  const loadData = (businessId: string) => {
-    const cats = mockStore.getCategories(businessId);
-    const prods = mockStore.getProducts(businessId);
+  const loadData = async (businessId: string) => {
+    const [cats, prods] = await Promise.all([
+      fetchCategoriesDB(businessId),
+      fetchProductsDB(businessId)
+    ]);
     setCategories(cats);
     setProducts(prods);
 
@@ -63,29 +81,36 @@ export default function MenuManagementPage() {
     setShowCategoryModal(true);
   };
 
-  const handleSaveCategory = (e: React.FormEvent) => {
+  const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!categoryName.trim()) return;
 
-    if (editingCategory) {
-      mockStore.updateCategory(editingCategory.id, { name: categoryName });
-    } else {
-      mockStore.addCategory(session.profile.id, categoryName);
+    setSavingItem(true);
+    try {
+      if (editingCategory) {
+        await updateCategoryDB(editingCategory.id, { name: categoryName });
+      } else {
+        await addCategoryDB(session.profile.id, categoryName);
+      }
+
+      await loadData(session.profile.id);
+      setShowCategoryModal(false);
+    } catch (err) {
+      console.error('Failed to save category:', err);
+    } finally {
+      setSavingItem(false);
     }
-
-    loadData(session.profile.id);
-    setShowCategoryModal(false);
   };
 
-  const handleToggleCategoryActive = (cat: Category) => {
-    mockStore.updateCategory(cat.id, { is_active: !cat.is_active });
-    loadData(session.profile.id);
+  const handleToggleCategoryActive = async (cat: Category) => {
+    await updateCategoryDB(cat.id, { is_active: !cat.is_active });
+    await loadData(session.profile.id);
   };
 
-  const handleDeleteCategory = (id: string) => {
+  const handleDeleteCategory = async (id: string) => {
     if (confirm('Bu kategoriyi ve kategorideki tüm ürünleri silmek istediğinize emin misiniz?')) {
-      mockStore.deleteCategory(id);
-      loadData(session.profile.id);
+      await deleteCategoryDB(id);
+      await loadData(session.profile.id);
     }
   };
 
@@ -111,47 +136,54 @@ export default function MenuManagementPage() {
     setShowProductModal(true);
   };
 
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!productName.trim() || !productPrice || !productCategoryId) return;
 
     const priceNum = parseFloat(productPrice);
+    setSavingItem(true);
 
-    if (editingProduct) {
-      mockStore.updateProduct(editingProduct.id, {
-        name: productName,
-        description: productDescription,
-        price: priceNum,
-        category_id: productCategoryId,
-        image_url: productImageUrl,
-        is_active: productActive
-      });
-    } else {
-      mockStore.addProduct({
-        business_id: session.profile.id,
-        category_id: productCategoryId,
-        name: productName,
-        description: productDescription,
-        price: priceNum,
-        image_url: productImageUrl,
-        sort_order: products.length + 1,
-        is_active: productActive
-      });
+    try {
+      if (editingProduct) {
+        await updateProductDB(editingProduct.id, {
+          name: productName,
+          description: productDescription,
+          price: priceNum,
+          category_id: productCategoryId,
+          image_url: productImageUrl,
+          is_active: productActive
+        });
+      } else {
+        await addProductDB({
+          business_id: session.profile.id,
+          category_id: productCategoryId,
+          name: productName,
+          description: productDescription,
+          price: priceNum,
+          image_url: productImageUrl,
+          sort_order: products.length + 1,
+          is_active: productActive
+        });
+      }
+
+      await loadData(session.profile.id);
+      setShowProductModal(false);
+    } catch (err) {
+      console.error('Failed to save product:', err);
+    } finally {
+      setSavingItem(false);
     }
-
-    loadData(session.profile.id);
-    setShowProductModal(false);
   };
 
-  const handleToggleProductActive = (prod: Product) => {
-    mockStore.updateProduct(prod.id, { is_active: !prod.is_active });
-    loadData(session.profile.id);
+  const handleToggleProductActive = async (prod: Product) => {
+    await updateProductDB(prod.id, { is_active: !prod.is_active });
+    await loadData(session.profile.id);
   };
 
-  const handleDeleteProduct = (id: string) => {
+  const handleDeleteProduct = async (id: string) => {
     if (confirm('Bu ürünü silmek istediğinize emin misiniz?')) {
-      mockStore.deleteProduct(id);
-      loadData(session.profile.id);
+      await deleteProductDB(id);
+      await loadData(session.profile.id);
     }
   };
 
@@ -217,7 +249,7 @@ export default function MenuManagementPage() {
 
       </div>
 
-      {categories.length === 0 && (
+      {categories.length === 0 && !loading && (
         <div className="glass-panel p-8 text-center border-amber-500/30 bg-amber-500/5">
           <Tag className="w-10 h-10 text-amber-400 mx-auto mb-2" />
           <h3 className="text-lg font-bold text-white mb-1">Henüz Kategori Eklenmemiş</h3>
@@ -429,9 +461,10 @@ export default function MenuManagementPage() {
                 </button>
                 <button
                   type="submit"
-                  className="gradient-btn px-4 py-2 rounded-xl text-xs font-semibold"
+                  disabled={savingItem}
+                  className="gradient-btn px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1 disabled:opacity-60"
                 >
-                  Kaydet
+                  {savingItem ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Kaydet</span>}
                 </button>
               </div>
             </form>
@@ -546,9 +579,10 @@ export default function MenuManagementPage() {
                 </button>
                 <button
                   type="submit"
-                  className="gradient-btn px-4 py-2 rounded-xl text-xs font-semibold"
+                  disabled={savingItem}
+                  className="gradient-btn px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1 disabled:opacity-60"
                 >
-                  Ürünü Kaydet
+                  {savingItem ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Ürünü Kaydet</span>}
                 </button>
               </div>
             </form>

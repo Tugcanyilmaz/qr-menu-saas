@@ -3,23 +3,37 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { mockStore } from '@/lib/mockStore';
+import { getCurrentSessionProfile } from '@/lib/supabaseClient';
 import { SessionUser } from '@/lib/types';
-import { ShieldAlert, Building2, History, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Building2, History, AlertTriangle, Loader2 } from 'lucide-react';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [session, setSession] = useState<SessionUser | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const active = mockStore.getCurrentSession();
-    if (!active || active.role !== 'ADMIN') {
-      router.push('/login');
-    } else {
-      setSession(active);
+    async function checkAuth() {
+      const active = await getCurrentSessionProfile();
+      if (!active || active.role !== 'ADMIN') {
+        router.push('/login');
+      } else {
+        setSession(active);
+      }
+      setLoading(false);
     }
+    checkAuth();
   }, [router, pathname]);
+
+  if (loading) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center space-x-2 text-purple-400 font-medium text-sm">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span>Admin yetkisi doğrulanıyor...</span>
+      </div>
+    );
+  }
 
   if (!session || session.role !== 'ADMIN') {
     return (

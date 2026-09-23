@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { mockStore } from '@/lib/mockStore';
+import { registerBusinessUser } from '@/lib/supabaseClient';
 import Link from 'next/link';
-import { Sparkles, ShieldCheck, Store, Mail, KeyRound, Link as LinkIcon, ArrowRight } from 'lucide-react';
+import { Sparkles, ShieldCheck, Store, Mail, KeyRound, Link as LinkIcon, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -13,6 +13,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState<string>('');
   const [customSlug, setCustomSlug] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(false);
 
   const handleNameChange = (val: string) => {
     setBusinessName(val);
@@ -27,18 +28,24 @@ export default function RegisterPage() {
     setCustomSlug(clean);
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!businessName.trim() || !email.trim()) {
+    if (!businessName.trim() || !email.trim() || !password) {
       setError('Lütfen tüm zorunlu alanları doldurun.');
       return;
     }
 
+    setLoading(true);
+    setError('');
+
     try {
-      mockStore.registerBusiness(businessName, email, customSlug);
+      await registerBusinessUser(businessName, email, password, customSlug);
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Kayıt sırasında bir hata oluştu.');
+      console.error('Registration failed:', err);
+      setError(err.message || 'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -140,6 +147,7 @@ export default function RegisterPage() {
                 <input
                   type="password"
                   required
+                  minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 focus:border-indigo-500 text-white text-sm rounded-xl pl-9 pr-3 py-2.5 outline-none transition-colors"
@@ -150,10 +158,20 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              className="w-full gradient-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2 mt-4 shadow-lg"
+              disabled={loading}
+              className="w-full gradient-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2 mt-4 shadow-lg disabled:opacity-60"
             >
-              <span>Hesabımı Oluştur ve Menümü Hazırla</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Kayıt Yapılıyor...</span>
+                </>
+              ) : (
+                <>
+                  <span>Hesabımı Oluştur ve Menümü Hazırla</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 

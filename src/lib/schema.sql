@@ -63,6 +63,31 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON public.audit_logs(target_business_id);
 
 -- ----------------------------------------------------
+-- AUTOMATIC PROFILE TRIGGER ON SIGNUP
+-- ----------------------------------------------------
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, name, slug, role)
+  VALUES (
+    new.id,
+    COALESCE(new.raw_user_meta_data->>'name', 'İşletme'),
+    COALESCE(new.raw_user_meta_data->>'slug', concat('isletme-', substring(new.id::text, 1, 8))),
+    COALESCE(new.raw_user_meta_data->>'role', 'BUSINESS')
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    slug = EXCLUDED.slug;
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ----------------------------------------------------
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ----------------------------------------------------
 
@@ -87,7 +112,11 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE POLICY "Public profile view" ON public.profiles
   FOR SELECT USING (true);
 
--- Business can update their own profile (except slug which is immutable in UI/triggers)
+-- Allow profile creation during sign-up
+CREATE POLICY "Public insert profile" ON public.profiles
+  FOR INSERT WITH CHECK (true);
+
+-- Business can update their own profile
 CREATE POLICY "Business update own profile" ON public.profiles
   FOR UPDATE USING (auth.uid() = id);
 
@@ -96,36 +125,22 @@ CREATE POLICY "Admin manage all profiles" ON public.profiles
   FOR ALL USING (public.is_admin());
 
 -- CATEGORIES POLICIES
--- Anyone can view active categories of active businesses
 CREATE POLICY "Public categories view" ON public.categories
-  FOR SELECT USING (
-    is_active = true AND EXISTS (
-      SELECT 1 FROM public.profiles WHERE id = business_id AND is_active = true
-    )
-  );
+  FOR SELECT USING (true);
 
--- Business users can view and manage all their own categories
 CREATE POLICY "Business manage own categories" ON public.categories
   FOR ALL USING (auth.uid() = business_id);
 
--- Admin manage all categories
 CREATE POLICY "Admin manage all categories" ON public.categories
   FOR ALL USING (public.is_admin());
 
 -- PRODUCTS POLICIES
--- Anyone can view active products of active businesses
 CREATE POLICY "Public products view" ON public.products
-  FOR SELECT USING (
-    is_active = true AND EXISTS (
-      SELECT 1 FROM public.profiles WHERE id = business_id AND is_active = true
-    )
-  );
+  FOR SELECT USING (true);
 
--- Business users can view and manage all their own products
 CREATE POLICY "Business manage own products" ON public.products
   FOR ALL USING (auth.uid() = business_id);
 
--- Admin manage all products
 CREATE POLICY "Admin manage all products" ON public.products
   FOR ALL USING (public.is_admin());
 
@@ -136,23 +151,18 @@ CREATE POLICY "Admin manage audit logs" ON public.audit_logs
 -- ----------------------------------------------------
 -- STORAGE SETUP (FOR LOGOS & PRODUCT IMAGES)
 -- ----------------------------------------------------
--- Insert public bucket for assets if not exists
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('qr-menu-assets', 'qr-menu-assets', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Public bucket read policy
 CREATE POLICY "Public read storage objects" ON storage.objects
   FOR SELECT USING (bucket_id = 'qr-menu-assets');
 
--- Authenticated upload policy
 CREATE POLICY "Authenticated users upload objects" ON storage.objects
-  FOR INSERT WITH CHECK (
-    bucket_id = 'qr-menu-assets' AND auth.role() = 'authenticated'
-  );
+  FOR INSERT WITH CHECK (bucket_id = 'qr-menu-assets');
 
--- Business delete own object policy
+CREATE POLICY "Authenticated users update objects" ON storage.objects
+  FOR UPDATE WITH CHECK (bucket_id = 'qr-menu-assets');
+
 CREATE POLICY "Authenticated users delete objects" ON storage.objects
-  FOR DELETE USING (
-    bucket_id = 'qr-menu-assets' AND auth.role() = 'authenticated'
-  );
+  FOR DELETE USING (bucket_id = 'qr-menu-assets');

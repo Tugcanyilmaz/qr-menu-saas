@@ -1,16 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { mockStore } from '@/lib/mockStore';
+import { fetchAuditLogsDB } from '@/lib/supabaseClient';
 import { AuditLog } from '@/lib/types';
-import { History, ShieldAlert, Store, Clock, FileText } from 'lucide-react';
+import { History, ShieldAlert, Clock, Loader2 } from 'lucide-react';
 
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const list = mockStore.getAuditLogs();
-    setLogs(list);
+    async function load() {
+      const list = await fetchAuditLogsDB();
+      setLogs(list);
+      setLoading(false);
+    }
+    load();
   }, []);
 
   return (
@@ -25,7 +30,12 @@ export default function AuditLogsPage() {
           </div>
         </div>
 
-        {logs.length === 0 ? (
+        {loading ? (
+          <div className="p-12 text-center text-purple-400 text-xs font-medium flex items-center justify-center space-x-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span>Audit logları yükleniyor...</span>
+          </div>
+        ) : logs.length === 0 ? (
           <div className="p-8 text-center text-slate-500 text-xs">
             Henüz herhangi bir audit log kaydı bulunmamaktadır.
           </div>

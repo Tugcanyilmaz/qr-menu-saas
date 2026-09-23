@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { mockStore } from '@/lib/mockStore';
-import { SessionUser, Profile } from '@/lib/types';
+import { getCurrentSessionProfile, updateProfileDB } from '@/lib/supabaseClient';
+import { SessionUser } from '@/lib/types';
 import QrCodeGenerator from '@/components/QrCodeGenerator';
 import ImageUploader from '@/components/ImageUploader';
-import { Save, Lock, Building, Phone, MapPin, FileText, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Save, Lock, Building, Phone, MapPin, FileText, CheckCircle2, Loader2 } from 'lucide-react';
 
 export default function DashboardOverviewPage() {
   const [session, setSession] = useState<SessionUser | null>(null);
@@ -15,35 +15,51 @@ export default function DashboardOverviewPage() {
   const [description, setDescription] = useState<string>('');
   const [logoUrl, setLogoUrl] = useState<string>('');
   const [saved, setSaved] = useState<boolean>(false);
+  const [saving, setSaving] = useState<boolean>(false);
 
   useEffect(() => {
-    const s = mockStore.getCurrentSession();
-    if (s) {
-      setSession(s);
-      setName(s.profile.name);
-      setPhone(s.profile.phone || '');
-      setAddress(s.profile.address || '');
-      setDescription(s.profile.description || '');
-      setLogoUrl(s.profile.logo_url || '');
+    async function load() {
+      const s = await getCurrentSessionProfile();
+      if (s) {
+        setSession(s);
+        setName(s.profile.name);
+        setPhone(s.profile.phone || '');
+        setAddress(s.profile.address || '');
+        setDescription(s.profile.description || '');
+        setLogoUrl(s.profile.logo_url || '');
+      }
     }
+    load();
   }, []);
 
   if (!session) return null;
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const updated = mockStore.updateProfile(session.profile.id, {
-      name,
-      phone,
-      address,
-      description,
-      logo_url: logoUrl
-    });
+    setSaving(true);
+    try {
+      const updated = await updateProfileDB(session.profile.id, {
+        name,
+        phone,
+        address,
+        description,
+        logo_url: logoUrl
+      });
 
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+      setSession({
+        ...session,
+        profile: updated
+      });
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error('Profile update failed:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -182,10 +198,20 @@ export default function DashboardOverviewPage() {
             <div className="pt-2">
               <button
                 type="submit"
-                className="gradient-btn py-3 px-6 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2 shadow-lg"
+                disabled={saving}
+                className="gradient-btn py-3 px-6 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2 shadow-lg disabled:opacity-60"
               >
-                <Save className="w-4 h-4" />
-                <span>Profil Bilgilerini Kaydet</span>
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Kaydediliyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>Profil Bilgilerini Kaydet</span>
+                  </>
+                )}
               </button>
             </div>
 

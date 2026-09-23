@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { QrCode, Sparkles, ShieldCheck, Zap, Smartphone, Utensils, ArrowRight, CheckCircle2, Store, Lock } from 'lucide-react';
+import { QrCode, Sparkles, ShieldCheck, Zap, Smartphone, Utensils, ArrowRight, Store, Lock, LogIn } from 'lucide-react';
 
 export default function LandingPage() {
   return (
@@ -38,17 +38,17 @@ export default function LandingPage() {
               href="/register"
               className="gradient-btn w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-bold flex items-center justify-center space-x-2 shadow-xl shadow-indigo-600/30"
             >
+              <Sparkles className="w-5 h-5 text-amber-300" />
               <span>Hemen Ücretsiz Kaydolun</span>
               <ArrowRight className="w-5 h-5" />
             </Link>
 
             <Link
-              href="/mavi-kafe"
-              target="_blank"
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-bold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center space-x-2 transition-colors"
+              href="/login"
+              className="w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-bold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-indigo-500/30 flex items-center justify-center space-x-2 transition-all shadow-lg"
             >
-              <Store className="w-5 h-5 text-emerald-400" />
-              <span>Canlı Örnek Menüyü Aç (/mavi-kafe)</span>
+              <LogIn className="w-5 h-5 text-indigo-400" />
+              <span>Giriş Yap</span>
             </Link>
           </div>
 
@@ -56,7 +56,7 @@ export default function LandingPage() {
           <div className="glass-panel p-6 max-w-2xl mx-auto rounded-2xl border-indigo-500/30 text-left text-xs text-slate-300 space-y-3">
             <div className="flex items-center space-x-2 text-indigo-400 font-bold">
               <Zap className="w-4 h-4 text-amber-400" />
-              <span>Tek Tıkla Hazır Doyurucu Demo Hesapları:</span>
+              <span>Tek Tıkla Hazır Demo Hesapları:</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 font-mono">
               <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
@@ -64,14 +64,14 @@ export default function LandingPage() {
                   <span>Mavi Kafe & Bistro</span>
                   <span className="text-[10px] text-emerald-400 font-mono font-normal">/mavi-kafe</span>
                 </p>
-                <p className="text-[11px] text-slate-400">İşletme Paneli: 4 Kategori, 5 Ürün, QR Kod SVG</p>
+                <p className="text-[11px] text-slate-400">Giriş: mavi@kafe.com / 123456</p>
               </div>
               <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
                 <p className="text-white font-bold mb-1 font-sans flex items-center justify-between">
-                  <span>Gusto Pizza & Pasta</span>
-                  <span className="text-[10px] text-emerald-400 font-mono font-normal">/gusto-pizza</span>
+                  <span>Admin Hesabı</span>
+                  <span className="text-[10px] text-purple-400 font-mono font-normal">/admin</span>
                 </p>
-                <p className="text-[11px] text-slate-400">İşletme Paneli: 3 Kategori, 2 Ürün, QR Kod SVG</p>
+                <p className="text-[11px] text-slate-400">Giriş: admin@qrmenu.com / admin123</p>
               </div>
             </div>
           </div>
@@ -124,33 +124,6 @@ export default function LandingPage() {
               </p>
             </div>
 
-          </div>
-
-        </div>
-      </section>
-
-      {/* HOW IT WORKS WORKFLOW */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="text-center max-w-2xl mx-auto mb-16">
-            <h2 className="text-3xl font-extrabold text-white mb-3">Adım Adım Basit Kullanım Akışı</h2>
-            <p className="text-slate-400 text-sm">Karmaşık kurulumlar yok. Saniyeler içinde canlıya alın.</p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { step: '01', title: 'Ücretsiz Kaydolun', desc: 'İşletme adınızı girin ve kalıcı URL slug adresinizi oluşturun.' },
-              { step: '02', title: 'Menünüzü Oluşturun', desc: 'Kategorilerinizi ekleyin, ürün adlarını, açıklamalarını ve fiyatlarını girin.' },
-              { step: '03', title: 'QR Kodunuzu İndirin', desc: 'Sistemin oluşturduğu yüksek çözünürlüklü SVG veya PNG QR kodunu indirin.' },
-              { step: '04', title: 'Masaya Koyun & Başlayın', desc: 'QR kodunuzu masalarınıza yerleştirin, müşterileriniz anında güncel menünüzü görsün.' }
-            ].map((s, idx) => (
-              <div key={idx} className="glass-panel p-6 rounded-2xl border-slate-800 relative">
-                <span className="text-3xl font-extrabold text-indigo-500/40 font-mono mb-3 block">{s.step}</span>
-                <h4 className="text-base font-bold text-white mb-2">{s.title}</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">{s.desc}</p>
-              </div>
-            ))}
           </div>
 
         </div>

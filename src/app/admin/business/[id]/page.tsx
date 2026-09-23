@@ -2,12 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { mockStore } from '@/lib/mockStore';
+import {
+  getCurrentSessionProfile,
+  fetchProfileById,
+  fetchCategoriesDB,
+  fetchProductsDB,
+  updateProfileDB,
+  updateProductDB,
+  addAuditLogDB
+} from '@/lib/supabaseClient';
 import { Profile, Category, Product, SessionUser } from '@/lib/types';
 import QrCodeGenerator from '@/components/QrCodeGenerator';
 import ImageUploader from '@/components/ImageUploader';
 import Link from 'next/link';
-import { Save, ArrowLeft, ShieldAlert, KeyRound, Lock, Eye, EyeOff, Utensils, Tag, Plus, Edit2, Trash2, CheckCircle2 } from 'lucide-react';
+import { Save, ArrowLeft, ShieldAlert, KeyRound, Lock, Eye, EyeOff, Utensils, CheckCircle2, Loader2 } from 'lucide-react';
 
 export default function AdminBusinessDetailPage() {
   const router = useRouter();
@@ -18,6 +26,7 @@ export default function AdminBusinessDetailPage() {
   const [business, setBusiness] = useState<Profile | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   // Profile Form state
   const [name, setName] = useState<string>('');
@@ -27,107 +36,129 @@ export default function AdminBusinessDetailPage() {
   const [logoUrl, setLogoUrl] = useState<string>('');
   const [isActive, setIsActive] = useState<boolean>(true);
   const [savedSuccess, setSavedSuccess] = useState<string>('');
+  const [saving, setSaving] = useState<boolean>(false);
 
   // Password reset message state
   const [resetSent, setResetSent] = useState<boolean>(false);
 
   useEffect(() => {
-    const s = mockStore.getCurrentSession();
-    if (!s || s.role !== 'ADMIN') {
-      router.push('/login');
-      return;
+    async function load() {
+      const s = await getCurrentSessionProfile();
+      if (!s || s.role !== 'ADMIN') {
+        router.push('/login');
+        return;
+      }
+      setAdminSession(s);
+
+      const b = await fetchProfileById(businessId);
+      if (!b) {
+        router.push('/admin');
+        return;
+      }
+
+      setBusiness(b);
+      setName(b.name);
+      setPhone(b.phone || '');
+      setAddress(b.address || '');
+      setDescription(b.description || '');
+      setLogoUrl(b.logo_url || '');
+      setIsActive(b.is_active);
+
+      await loadCategoriesAndProducts(b.id);
+      setLoading(false);
     }
-    setAdminSession(s);
-
-    const b = mockStore.getProfileById(businessId);
-    if (!b) {
-      router.push('/admin');
-      return;
-    }
-
-    setBusiness(b);
-    setName(b.name);
-    setPhone(b.phone || '');
-    setAddress(b.address || '');
-    setDescription(b.description || '');
-    setLogoUrl(b.logo_url || '');
-    setIsActive(b.is_active);
-
-    loadCategoriesAndProducts(b.id);
+    load();
   }, [businessId, router]);
 
-  const loadCategoriesAndProducts = (bId: string) => {
-    setCategories(mockStore.getCategories(bId));
-    setProducts(mockStore.getProducts(bId));
+  const loadCategoriesAndProducts = async (bId: string) => {
+    const [cats, prods] = await Promise.all([
+      fetchCategoriesDB(bId),
+      fetchProductsDB(bId)
+    ]);
+    setCategories(cats);
+    setProducts(prods);
   };
 
-  if (!business || !adminSession) return null;
+  if (loading || !business || !adminSession) {
+    return (
+      <div className="p-12 text-center text-purple-400 text-xs font-medium flex items-center justify-center space-x-2">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span>İşletme detayları yükleniyor...</span>
+      </div>
+    );
+  }
 
-  const handleSaveProfileByAdmin = (e: React.FormEvent) => {
+  const handleSaveProfileByAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const updated = mockStore.updateProfile(
-      business.id,
-      {
-        name,
-        phone,
-        address,
-        description,
-        logo_url: logoUrl,
-        is_active: isActive
-      },
-      adminSession.profile // Records audit log
-    );
+    setSaving(true);
+    try {
+      const updated = await updateProfileDB(
+        business.id,
+        {
+          name,
+          phone,
+          address,
+          description,
+          logo_url: logoUrl,
+          is_active: isActive
+        },
+        adminSession.profile
+      );
 
-    setBusiness(updated);
-    setSavedSuccess('İşletme bilgileri başarıyla güncellendi ve Audit Log kaydedildi.');
-    setTimeout(() => setSavedSuccess(''), 3500);
+      setBusiness(updated);
+      setSavedSuccess('İşletme bilgileri başarıyla güncellendi ve Audit Log kaydedildi.');
+      setTimeout(() => setSavedSuccess(''), 3500);
+    } catch (err) {
+      console.error('Admin update failed:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleTriggerPasswordReset = () => {
+  const handleTriggerPasswordReset = async () => {
     if (!confirm(`${business.name} hesabı için şifre sıfırlama bağlantısı gönderilsin mi?`)) return;
 
-    // Record audit log for security reset
-    mockStore.addAuditLog(
+    await addAuditLogDB(
       adminSession.profile,
       business.id,
       business.name,
       'ŞİFRE_SIFIRLAMA_TALEBİ',
-      { note: 'Admin tarafından şifre sıfırlama bağlantısı tetiklendi.' }
+      { note: 'Admin tarafından şifre sıfırlama e-postası tetiklendi.' }
     );
 
     setResetSent(true);
     setTimeout(() => setResetSent(false), 4000);
   };
 
-  const handleToggleProductActive = (prod: Product) => {
-    mockStore.updateProduct(prod.id, { is_active: !prod.is_active });
-    mockStore.addAuditLog(
+  const handleToggleProductActive = async (prod: Product) => {
+    await updateProductDB(prod.id, { is_active: !prod.is_active });
+    await addAuditLogDB(
       adminSession.profile,
       business.id,
       business.name,
       'ADMIN_ÜRÜN_DURUMU_GÜNCELLEME',
       { product_name: prod.name, new_status: !prod.is_active }
     );
-    loadCategoriesAndProducts(business.id);
+    await loadCategoriesAndProducts(business.id);
   };
 
-  const handleUpdatePriceByAdmin = (prod: Product) => {
+  const handleUpdatePriceByAdmin = async (prod: Product) => {
     const newPriceStr = prompt(`'${prod.name}' için yeni fiyatı giriniz (TL):`, prod.price.toString());
     if (newPriceStr === null) return;
     const newPrice = parseFloat(newPriceStr);
     if (isNaN(newPrice) || newPrice < 0) return;
 
-    mockStore.updateProduct(prod.id, { price: newPrice });
-    mockStore.addAuditLog(
+    await updateProductDB(prod.id, { price: newPrice });
+    await addAuditLogDB(
       adminSession.profile,
       business.id,
       business.name,
       'ADMIN_FİYAT_GÜNCELLEME',
       { product_name: prod.name, old_price: prod.price, new_price: newPrice }
     );
-    loadCategoriesAndProducts(business.id);
+    await loadCategoriesAndProducts(business.id);
   };
 
   return (
@@ -261,15 +292,25 @@ export default function AdminBusinessDetailPage() {
 
               <button
                 type="submit"
-                className="w-full gradient-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2"
+                disabled={saving}
+                className="w-full gradient-btn py-3 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2 disabled:opacity-60"
               >
-                <Save className="w-4 h-4" />
-                <span>İşletme Bilgilerini Güncelle (Admin)</span>
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Güncelleniyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>İşletme Bilgilerini Güncelle (Admin)</span>
+                  </>
+                )}
               </button>
 
             </form>
 
-            {/* PASSWORD RESET TRIGGER SECTION (ADMIN SECURITY COMPLIANT) */}
+            {/* PASSWORD RESET TRIGGER SECTION */}
             <div className="mt-8 pt-6 border-t border-slate-800">
               <div className="flex items-center justify-between">
                 <div>
@@ -278,7 +319,7 @@ export default function AdminBusinessDetailPage() {
                     <span>Güvenli Şifre Yönetimi</span>
                   </h4>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Admin olarak işletme şifresini göremezsiniz. Gerektiğinde şifre sıfırlama bağlantısı tetikleyebilirsiniz.
+                    Admin olarak işletme şifresini göremezsiniz. Gerektiğinde şifre sıfırlama e-postası tetikleyebilirsiniz.
                   </p>
                 </div>
 
@@ -294,7 +335,7 @@ export default function AdminBusinessDetailPage() {
               {resetSent && (
                 <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center space-x-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>Şifre sıfırlama e-postası tetiklendi ve Audit Log kaydedildi.</span>
+                  <span>Şifre sıfırlama talebi tetiklendi ve Audit Log kaydedildi.</span>
                 </div>
               )}
             </div>

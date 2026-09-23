@@ -1,38 +1,43 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { mockStore } from '@/lib/mockStore';
+import { getCurrentSessionProfile, fetchAllProfilesAdmin, updateProfileDB } from '@/lib/supabaseClient';
 import { Profile, SessionUser } from '@/lib/types';
 import Link from 'next/link';
-import { Search, Building2, Store, ExternalLink, Edit3, ShieldAlert, CheckCircle2, XCircle, Power, Lock } from 'lucide-react';
+import { Search, Store, ExternalLink, Edit3, Power, Lock, Loader2 } from 'lucide-react';
 
 export default function AdminBusinessesPage() {
   const [session, setSession] = useState<SessionUser | null>(null);
   const [businesses, setBusinesses] = useState<Profile[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const s = mockStore.getCurrentSession();
-    setSession(s);
-    loadBusinesses();
+    async function load() {
+      const s = await getCurrentSessionProfile();
+      setSession(s);
+      await loadBusinesses();
+      setLoading(false);
+    }
+    load();
   }, []);
 
-  const loadBusinesses = () => {
-    const profiles = mockStore.getProfiles().filter(p => p.role === 'BUSINESS');
+  const loadBusinesses = async () => {
+    const profiles = await fetchAllProfilesAdmin();
     setBusinesses(profiles);
   };
 
-  const handleToggleStatus = (target: Profile) => {
+  const handleToggleStatus = async (target: Profile) => {
     if (!session || session.profile.role !== 'ADMIN') return;
 
     const newStatus = !target.is_active;
-    const updated = mockStore.updateProfile(
+    await updateProfileDB(
       target.id,
       { is_active: newStatus },
-      session.profile // Records audit log
+      session.profile
     );
 
-    loadBusinesses();
+    await loadBusinesses();
   };
 
   const filtered = businesses.filter(b => {
@@ -48,6 +53,15 @@ export default function AdminBusinessesPage() {
 
   const activeCount = businesses.filter(b => b.is_active).length;
   const passiveCount = businesses.filter(b => !b.is_active).length;
+
+  if (loading) {
+    return (
+      <div className="p-12 text-center text-purple-400 text-xs font-medium flex items-center justify-center space-x-2">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span>İşletme listesi yükleniyor...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
