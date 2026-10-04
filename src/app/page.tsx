@@ -44,6 +44,14 @@ export default function LandingPage() {
             </Link>
 
             <Link
+              href="/demo"
+              className="w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center space-x-2 transition-all shadow-lg"
+            >
+              <Smartphone className="w-5 h-5" />
+              <span>Canlı Menüyü Gör</span>
+            </Link>
+
+            <Link
               href="/login"
               className="w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-bold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-indigo-500/30 flex items-center justify-center space-x-2 transition-all shadow-lg"
             >

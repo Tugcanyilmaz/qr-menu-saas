@@ -191,13 +191,8 @@ class MockStore {
 
   // --- Session Management ---
   getCurrentSession(): SessionUser | null {
-    const defaultUser: SessionUser = {
-      id: 'bus-001',
-      email: 'mavi@kafe.com',
-      role: 'BUSINESS',
-      profile: INITIAL_PROFILES[0]
-    };
-    return this.getItem<SessionUser | null>(this.STORAGE_KEY_SESSION, defaultUser);
+    // Giriş yapılmamışsa varsayılan bir kullanıcı DÖNDÜRMEZ (eskiden 'Mavi Kafe' dönüyordu)
+    return this.getItem<SessionUser | null>(this.STORAGE_KEY_SESSION, null);
   }
 
   setSession(user: SessionUser | null): void {

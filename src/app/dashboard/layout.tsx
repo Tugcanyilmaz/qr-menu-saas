@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { mockStore } from '@/lib/mockStore';
+import { getCurrentSessionProfile } from '@/lib/supabaseClient';
 import { SessionUser } from '@/lib/types';
 import { QrCode, Utensils, Settings, ExternalLink, ShieldCheck, Store, Lock } from 'lucide-react';
 
@@ -13,12 +13,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [session, setSession] = useState<SessionUser | null>(null);
 
   useEffect(() => {
-    const active = mockStore.getCurrentSession();
-    if (!active) {
-      router.push('/login');
-    } else {
-      setSession(active);
+    async function checkAuth() {
+      const active = await getCurrentSessionProfile();
+      if (!active) {
+        router.push('/login');
+      } else {
+        setSession(active);
+      }
     }
+    checkAuth();
   }, [router, pathname]);
 
   if (!session) return null;

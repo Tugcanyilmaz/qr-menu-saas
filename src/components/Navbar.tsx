@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { getCurrentSessionProfile, logoutUser } from '@/lib/supabaseClient';
 import { SessionUser } from '@/lib/types';
@@ -9,7 +9,6 @@ import { QrCode, Store, ShieldAlert, LogOut, Sparkles, LayoutDashboard, LogIn } 
 
 export default function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
   const [session, setSession] = useState<SessionUser | null>(null);
 
   useEffect(() => {
@@ -23,11 +22,13 @@ export default function Navbar() {
   const handleLogout = async () => {
     await logoutUser();
     setSession(null);
-    router.push('/');
+    // Tam sayfa yenileme ile anasayfaya git (tüm oturum durumu temizlensin)
+    window.location.href = '/';
   };
 
-  // Hide main navbar on public customer menu route
+  // Hide main navbar on public customer menu route (QR ile açılan menüler ve demo önizleme)
   const isPublicMenu = pathname !== '/' &&
+    pathname !== '/demo' &&
     !pathname.startsWith('/dashboard') &&
     !pathname.startsWith('/admin') &&
     !pathname.startsWith('/login') &&
@@ -72,7 +73,8 @@ export default function Navbar() {
                   </Link>
                 )}
 
-                {/* Business Dashboard Link */}
+                {/* Business Dashboard Link (admin'de gizli) */}
+                {session.role !== 'ADMIN' && (
                 <Link
                   href="/dashboard"
                   className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -85,8 +87,10 @@ export default function Navbar() {
                   <span className="hidden sm:inline">İşletme Paneli</span>
                   <span className="sm:hidden">Panel</span>
                 </Link>
+                )}
 
-                {/* Live Menu Link */}
+                {/* Live Menu Link (admin'de gizli) */}
+                {session.role !== 'ADMIN' && (
                 <Link
                   href={`/${session.profile.slug}`}
                   target="_blank"
@@ -95,6 +99,7 @@ export default function Navbar() {
                   <Store className="w-3.5 h-3.5" />
                   <span>Canlı Menü</span>
                 </Link>
+                )}
 
                 {/* User Info & Logout */}
                 <div className="flex items-center pl-2 border-l border-slate-800 space-x-2">
@@ -109,7 +114,7 @@ export default function Navbar() {
                     className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors flex items-center space-x-1 text-xs font-semibold"
                   >
                     <LogOut className="w-4 h-4" />
-                    <span className="hidden sm:inline">Çıkış Yap</span>
+                    <span>Çıkış</span>
                   </button>
                 </div>
               </>

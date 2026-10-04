@@ -1,31 +1,27 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { registerBusinessUser } from '@/lib/supabaseClient';
+import { useState, useEffect } from 'react';
+import { registerBusinessUser, isSupabaseConfigured, slugify } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import { Sparkles, ShieldCheck, Store, Mail, KeyRound, Link as LinkIcon, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [businessName, setBusinessName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [customSlug, setCustomSlug] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const [confirmationSentTo, setConfirmationSentTo] = useState<string>('');
+  const [host, setHost] = useState<string>('domain.com');
+
+  useEffect(() => {
+    setHost(window.location.host);
+  }, []);
 
   const handleNameChange = (val: string) => {
     setBusinessName(val);
-    // Auto generate clean slug
-    const clean = val
-      .toLowerCase()
-      .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
-      .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c')
-      .replace(/[^a-z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
-    setCustomSlug(clean);
+    setCustomSlug(slugify(val));
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -39,11 +35,16 @@ export default function RegisterPage() {
     setError('');
 
     try {
-      await registerBusinessUser(businessName, email, password, customSlug);
-      router.push('/dashboard');
-    } catch (err: any) {
+      const result = await registerBusinessUser(businessName, email, password, customSlug);
+      if (result.needsEmailConfirmation) {
+        setConfirmationSentTo(email);
+        return;
+      }
+      // Navbar'ın yeni oturumu görmesi için tam sayfa yönlendirme
+      window.location.href = '/dashboard';
+    } catch (err) {
       console.error('Registration failed:', err);
-      setError(err.message || 'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.');
+      setError((err as Error).message || 'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.');
     } finally {
       setLoading(false);
     }
@@ -75,6 +76,23 @@ export default function RegisterPage() {
               </p>
             </div>
           </div>
+
+          {!isSupabaseConfigured && (
+            <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+              <strong>Uyarı:</strong> Supabase bağlantısı yapılandırılmamış (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY).
+              Kayıtlar yalnızca bu tarayıcıda saklanır ve QR menü linkleri çalışmaz.
+            </div>
+          )}
+
+          {confirmationSentTo && (
+            <div className="mb-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+              <p className="font-semibold text-white mb-1">Kaydınız alındı! 🎉</p>
+              <p className="text-xs leading-relaxed">
+                <strong>{confirmationSentTo}</strong> adresine bir onay e-postası gönderdik.
+                E-postadaki bağlantıya tıkladıktan sonra <Link href="/login" className="underline font-semibold">giriş yapabilirsiniz</Link>.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
@@ -111,13 +129,13 @@ export default function RegisterPage() {
                   type="text"
                   required
                   value={customSlug}
-                  onChange={(e) => setCustomSlug(e.target.value)}
+                  onChange={(e) => setCustomSlug(slugify(e.target.value))}
                   className="w-full bg-slate-900 border border-slate-700 focus:border-indigo-500 text-indigo-300 font-mono text-sm rounded-xl pl-9 pr-3 py-2.5 outline-none transition-colors"
                   placeholder="mavi-kafe"
                 />
               </div>
               <p className="text-[11px] text-slate-400 mt-1 font-mono">
-                Menü URL'niz: <span className="text-emerald-400 font-bold">domain.com/{customSlug || 'isletme-slug'}</span>
+                Menü URL'niz: <span className="text-emerald-400 font-bold">{host}/{customSlug || 'isletme-slug'}</span>
               </p>
             </div>
 

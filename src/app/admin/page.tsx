@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { getCurrentSessionProfile, fetchAllProfilesAdmin, updateProfileDB } from '@/lib/supabaseClient';
 import { Profile, SessionUser } from '@/lib/types';
 import Link from 'next/link';
-import { Search, Store, ExternalLink, Edit3, Power, Lock, Loader2 } from 'lucide-react';
+import { Search, Store, ExternalLink, Edit3, Power, Lock, Loader2, Utensils } from 'lucide-react';
 
 export default function AdminBusinessesPage() {
   const [session, setSession] = useState<SessionUser | null>(null);
@@ -176,6 +176,14 @@ export default function AdminBusinessesPage() {
                         title="Canlı Menüyü Gör"
                       >
                         <ExternalLink className="w-4 h-4" />
+                      </Link>
+
+                      <Link
+                        href={`/admin/business/${b.id}/menu`}
+                        className="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+                      >
+                        <Utensils className="w-3.5 h-3.5" />
+                        <span>Menüyü Düzenle</span>
                       </Link>
 
                       <Link

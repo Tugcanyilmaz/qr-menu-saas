@@ -15,19 +15,52 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-const ADMIN_EMAIL = 'tugcanyilmaz@hotmail.com';
+/**
+ * ÖNEMLİ: Supabase yapılandırılmışsa artık hiçbir yerde sessizce
+ * tarayıcı hafızasına (mockStore / localStorage) düşülmez.
+ * mockStore yalnızca env değişkenleri hiç tanımlı değilse (yerel geliştirme) kullanılır.
+ * Eski sürümde bu "sessiz düşüş" yüzünden kayıtlar Supabase'e gitmiyor,
+ * QR linkleri de 404 veriyordu.
+ */
+
+// Uygulama route'larıyla çakışmaması için işletmelere verilemeyecek slug'lar
+export const RESERVED_SLUGS = [
+  'admin', 'dashboard', 'login', 'register', 'demo', 'api', 'auth', 'logout', 'm', 'menu'
+];
+
+export function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
+    .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c')
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function translateAuthError(message?: string): string {
+  const m = (message || '').toLowerCase();
+  if (m.includes('invalid login credentials')) return 'E-posta veya şifre hatalı.';
+  if (m.includes('email not confirmed')) return 'E-posta adresiniz henüz onaylanmamış. Gelen kutunuzdaki onay bağlantısına tıklayın.';
+  if (m.includes('already registered') || m.includes('already been registered')) return 'Bu e-posta adresiyle zaten bir hesap var. Giriş yapmayı deneyin.';
+  if (m.includes('password should be at least')) return 'Şifre en az 6 karakter olmalıdır.';
+  if (m.includes('rate limit')) return 'Çok fazla deneme yapıldı. Lütfen birkaç dakika sonra tekrar deneyin.';
+  if (m.includes('database error')) return 'Veritabanı hatası: Supabase tarafında tablo/trigger kurulumu eksik olabilir.';
+  return message || 'Beklenmeyen bir hata oluştu.';
+}
 
 /**
  * Upload image file to Supabase Storage bucket 'qr-menu-assets'
  */
 export async function uploadImageToStorage(file: File, folder: 'logos' | 'products'): Promise<string | null> {
-  if (!supabase || !isSupabaseConfigured) {
-    return new Promise((resolve) => {
+  const readAsDataUrl = () =>
+    new Promise<string>((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
       reader.readAsDataURL(file);
     });
-  }
+
+  if (!supabase) return readAsDataUrl();
 
   try {
     const fileExt = file.name.split('.').pop();
@@ -37,13 +70,9 @@ export async function uploadImageToStorage(file: File, folder: 'logos' | 'produc
       .from('qr-menu-assets')
       .upload(fileName, file, { cacheControl: '3600', upsert: true });
 
-    if (error) {
+    if (error || !data) {
       console.error('Storage upload error:', error);
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
+      return null;
     }
 
     const { data: publicUrlData } = supabase.storage
@@ -62,232 +91,171 @@ export async function uploadImageToStorage(file: File, folder: 'logos' | 'produc
 // -------------------------------------------------------------------
 
 export async function getCurrentSessionProfile(): Promise<SessionUser | null> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.getCurrentSession();
   }
 
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) {
-      return mockStore.getCurrentSession();
-    }
+    if (!session?.user) return null;
 
-    const userEmail = session.user.email?.toLowerCase() || '';
-    const isAdminEmail = userEmail === ADMIN_EMAIL.toLowerCase();
+    const user = session.user;
 
-    let { data: profile } = await supabase
+    const { data: existingProfile, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', session.user.id)
-      .single();
+      .eq('id', user.id)
+      .maybeSingle();
+    let profile = existingProfile;
 
-    // Auto promote to ADMIN if email matches admin email
-    if (profile && isAdminEmail && profile.role !== 'ADMIN') {
-      await supabase.from('profiles').update({ role: 'ADMIN' }).eq('id', profile.id);
-      profile.role = 'ADMIN';
+    if (error) {
+      console.error('Profil okunamadı:', error);
     }
 
-    // Fallback profile creation if auth user exists but profile trigger lagged
+    // Normalde profil, kayıt anında Supabase trigger'ı ile oluşur.
+    // Trigger çalışmadıysa (kurulum eksikse) burada BUSINESS olarak oluşturmayı dener.
     if (!profile) {
-      const role = isAdminEmail ? 'ADMIN' : 'BUSINESS';
-      const newProf: Profile = {
-        id: session.user.id,
-        role,
-        name: session.user.user_metadata?.name || 'İşletme',
-        slug: session.user.user_metadata?.slug || `isletme-${session.user.id.substring(0, 6)}`,
-        logo_url: null,
-        phone: '',
-        address: '',
-        description: '',
+      const metaSlug = slugify(user.user_metadata?.slug || '') || 'isletme';
+      const fallback = {
+        id: user.id,
+        role: 'BUSINESS' as const,
+        name: user.user_metadata?.name || 'İşletme',
+        slug: `${metaSlug}-${user.id.substring(0, 4)}`,
+        description: 'Menümüze hoş geldiniz!',
         is_active: true,
-        created_at: new Date().toISOString()
       };
-      await supabase.from('profiles').upsert([newProf]);
-      profile = newProf;
+      const { data: inserted, error: insertError } = await supabase
+        .from('profiles')
+        .insert([fallback])
+        .select()
+        .single();
+
+      if (insertError || !inserted) {
+        console.error('Profil oluşturulamadı:', insertError);
+        return null;
+      }
+      profile = inserted;
     }
 
-    const sessionUser: SessionUser = {
-      id: session.user.id,
-      email: session.user.email || '',
+    return {
+      id: user.id,
+      email: user.email || '',
       role: profile.role,
-      profile: profile as Profile
+      profile: profile as Profile,
     };
-
-    mockStore.setSession(sessionUser);
-    return sessionUser;
   } catch (err) {
     console.error('getCurrentSessionProfile error:', err);
-    return mockStore.getCurrentSession();
+    return null;
   }
 }
 
-export async function registerBusinessUser(name: string, email: string, pass: string, customSlug?: string): Promise<SessionUser> {
-  const isTargetAdmin = email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
-  const targetRole = isTargetAdmin ? 'ADMIN' : 'BUSINESS';
+export interface RegisterResult {
+  sessionUser: SessionUser | null;
+  needsEmailConfirmation: boolean;
+}
 
-  // Generate clean slug
-  let baseSlug = (customSlug || name)
-    .toLowerCase()
-    .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
-    .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c')
-    .replace(/[^a-z0-9]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-
+export async function registerBusinessUser(
+  name: string,
+  email: string,
+  pass: string,
+  customSlug?: string
+): Promise<RegisterResult> {
+  let baseSlug = slugify(customSlug || name);
   if (!baseSlug) baseSlug = 'isletme';
 
-  if (!supabase || !isSupabaseConfigured) {
-    const res = mockStore.registerBusiness(name, email, baseSlug);
-    if (isTargetAdmin) {
-      res.profile.role = 'ADMIN';
-      res.sessionUser.role = 'ADMIN';
-      mockStore.setSession(res.sessionUser);
-    }
-    return res.sessionUser;
+  if (RESERVED_SLUGS.includes(baseSlug)) {
+    throw new Error(`"${baseSlug}" adresi sistem tarafından kullanılıyor. Lütfen farklı bir URL adresi seçin.`);
   }
 
-  // 1. Supabase Auth Sign Up
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email,
+  if (!supabase) {
+    const res = mockStore.registerBusiness(name, email, baseSlug);
+    return { sessionUser: res.sessionUser, needsEmailConfirmation: false };
+  }
+
+  // Slug daha önce alınmış mı?
+  const { data: existing } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('slug', baseSlug)
+    .maybeSingle();
+
+  if (existing) {
+    throw new Error(`"/${baseSlug}" adresi başka bir işletme tarafından kullanılıyor. Lütfen farklı bir URL adresi yazın.`);
+  }
+
+  // Profil satırını Supabase trigger'ı (handle_new_user) oluşturur.
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
     password: pass,
     options: {
-      data: {
-        name,
-        slug: baseSlug,
-        role: targetRole
-      }
-    }
+      data: { name: name.trim(), slug: baseSlug },
+      emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined,
+    },
   });
 
-  if (authError || !authData.user) {
-    throw new Error(authError?.message || 'Supabase kayıt hatası');
+  if (error) throw new Error(translateAuthError(error.message));
+
+  // E-posta zaten kayıtlıysa Supabase hata yerine boş identities döndürür
+  if (data.user && data.user.identities && data.user.identities.length === 0) {
+    throw new Error('Bu e-posta adresiyle zaten bir hesap var. Giriş yapmayı deneyin.');
   }
 
-  const userId = authData.user.id;
-
-  // 2. Insert into Supabase profiles
-  const newProfile: Profile = {
-    id: userId,
-    role: targetRole,
-    name,
-    slug: baseSlug,
-    logo_url: null,
-    phone: '',
-    address: '',
-    description: 'Menümüze hoş geldiniz!',
-    is_active: true,
-    created_at: new Date().toISOString()
-  };
-
-  const { error: profileError } = await supabase
-    .from('profiles')
-    .upsert([newProfile]);
-
-  if (profileError) {
-    console.error('Profile creation error:', profileError);
+  // "Confirm email" açıksa oturum oluşmaz, kullanıcı e-postayı onaylamalı
+  if (!data.session) {
+    return { sessionUser: null, needsEmailConfirmation: true };
   }
 
-  const sessionUser: SessionUser = {
-    id: userId,
-    email,
-    role: targetRole,
-    profile: newProfile
-  };
-
-  mockStore.setSession(sessionUser);
-  return sessionUser;
+  const sessionUser = await getCurrentSessionProfile();
+  return { sessionUser, needsEmailConfirmation: false };
 }
 
 export async function loginUser(email: string, pass: string): Promise<SessionUser> {
-  const isTargetAdmin = email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
-
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     const profiles = mockStore.getProfiles();
-    const profile = isTargetAdmin
-      ? profiles.find(p => p.role === 'ADMIN') || profiles[0]
-      : profiles.find(p => p.role === 'BUSINESS') || profiles[0];
-
-    const sessionUser: SessionUser = {
-      id: profile.id,
-      email,
-      role: profile.role,
-      profile
-    };
+    const profile = profiles.find(p => p.role === 'BUSINESS') || profiles[0];
+    const sessionUser: SessionUser = { id: profile.id, email, role: profile.role, profile };
     mockStore.setSession(sessionUser);
     return sessionUser;
   }
 
-  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-    email,
-    password: pass
+  const { error } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password: pass,
   });
 
-  if (authError || !authData.user) {
-    throw new Error(authError?.message || 'E-posta veya şifre hatalı');
+  if (error) throw new Error(translateAuthError(error.message));
+
+  const sessionUser = await getCurrentSessionProfile();
+  if (!sessionUser) {
+    throw new Error('Giriş yapıldı ancak işletme profili bulunamadı. Supabase kurulumunu (supabase-fix.sql) kontrol edin.');
   }
-
-  const userId = authData.user.id;
-
-  let { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single();
-
-  if (isTargetAdmin && profile && profile.role !== 'ADMIN') {
-    await supabase.from('profiles').update({ role: 'ADMIN' }).eq('id', userId);
-    profile.role = 'ADMIN';
-  }
-
-  if (profileError || !profile) {
-    // Create default profile if missing
-    const newProfile: Profile = {
-      id: userId,
-      role: isTargetAdmin ? 'ADMIN' : 'BUSINESS',
-      name: email.split('@')[0],
-      slug: `isletme-${userId.substring(0, 6)}`,
-      is_active: true,
-      created_at: new Date().toISOString()
-    };
-    await supabase.from('profiles').upsert([newProfile]);
-    profile = newProfile;
-  }
-
-  const sessionUser: SessionUser = {
-    id: userId,
-    email: authData.user.email || email,
-    role: profile.role,
-    profile: profile as Profile
-  };
-
-  mockStore.setSession(sessionUser);
   return sessionUser;
 }
 
 export async function logoutUser(): Promise<void> {
-  if (supabase && isSupabaseConfigured) {
+  if (supabase) {
     await supabase.auth.signOut();
   }
   mockStore.setSession(null);
 }
 
 export async function fetchProfileBySlug(slug: string): Promise<Profile | null> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.getProfileBySlug(slug) || null;
   }
 
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .eq('slug', slug)
-    .single();
+    .eq('slug', slug.toLowerCase())
+    .maybeSingle();
 
-  if (error || !data) return mockStore.getProfileBySlug(slug) || null;
-  return data as Profile;
+  if (error) console.error('fetchProfileBySlug error:', error);
+  return (data as Profile) || null;
 }
 
 export async function fetchProfileById(id: string): Promise<Profile | null> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.getProfileById(id) || null;
   }
 
@@ -295,18 +263,20 @@ export async function fetchProfileById(id: string): Promise<Profile | null> {
     .from('profiles')
     .select('*')
     .eq('id', id)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) return mockStore.getProfileById(id) || null;
-  return data as Profile;
+  if (error) console.error('fetchProfileById error:', error);
+  return (data as Profile) || null;
 }
 
 export async function updateProfileDB(id: string, updates: Partial<Profile>, adminProfile?: Profile): Promise<Profile> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.updateProfile(id, updates, adminProfile);
   }
 
-  const { slug, ...allowedUpdates } = updates;
+  // slug ve role istemciden asla güncellenmez
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { slug, role, id: _id, created_at, ...allowedUpdates } = updates;
 
   const { data, error } = await supabase
     .from('profiles')
@@ -316,10 +286,11 @@ export async function updateProfileDB(id: string, updates: Partial<Profile>, adm
     .single();
 
   if (error || !data) {
-    return mockStore.updateProfile(id, updates, adminProfile);
+    console.error('updateProfileDB error:', error);
+    throw new Error(error?.message || 'Profil güncellenemedi (yetki hatası olabilir).');
   }
 
-  if (adminProfile && adminProfile.role === 'ADMIN') {
+  if (adminProfile && adminProfile.role === 'ADMIN' && adminProfile.id !== id) {
     await addAuditLogDB(adminProfile, id, data.name, 'İŞLETME_BİLGİLERİ_GÜNCELLENDİ', updates);
   }
 
@@ -331,7 +302,7 @@ export async function updateProfileDB(id: string, updates: Partial<Profile>, adm
 // -------------------------------------------------------------------
 
 export async function fetchCategoriesDB(businessId: string): Promise<Category[]> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.getCategories(businessId);
   }
 
@@ -339,31 +310,38 @@ export async function fetchCategoriesDB(businessId: string): Promise<Category[]>
     .from('categories')
     .select('*')
     .eq('business_id', businessId)
-    .order('sort_order', { ascending: true });
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
 
-  if (error || !data || data.length === 0) {
-    return mockStore.getCategories(businessId);
-  }
-  return data as Category[];
+  if (error) console.error('fetchCategoriesDB error:', error);
+  return (data as Category[]) || [];
 }
 
 export async function addCategoryDB(businessId: string, name: string): Promise<Category> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.addCategory(businessId, name);
   }
 
+  const { count } = await supabase
+    .from('categories')
+    .select('id', { count: 'exact', head: true })
+    .eq('business_id', businessId);
+
   const { data, error } = await supabase
     .from('categories')
-    .insert([{ business_id: businessId, name, sort_order: 1, is_active: true }])
+    .insert([{ business_id: businessId, name, sort_order: (count || 0) + 1, is_active: true }])
     .select()
     .single();
 
-  if (error || !data) return mockStore.addCategory(businessId, name);
+  if (error || !data) {
+    console.error('addCategoryDB error:', error);
+    throw new Error(error?.message || 'Kategori eklenemedi.');
+  }
   return data as Category;
 }
 
 export async function updateCategoryDB(id: string, updates: Partial<Category>): Promise<Category> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.updateCategory(id, updates);
   }
 
@@ -374,21 +352,27 @@ export async function updateCategoryDB(id: string, updates: Partial<Category>): 
     .select()
     .single();
 
-  if (error || !data) return mockStore.updateCategory(id, updates);
+  if (error || !data) {
+    console.error('updateCategoryDB error:', error);
+    throw new Error(error?.message || 'Kategori güncellenemedi.');
+  }
   return data as Category;
 }
 
 export async function deleteCategoryDB(id: string): Promise<void> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     mockStore.deleteCategory(id);
     return;
   }
-  await supabase.from('categories').delete().eq('id', id);
-  mockStore.deleteCategory(id);
+  const { error } = await supabase.from('categories').delete().eq('id', id);
+  if (error) {
+    console.error('deleteCategoryDB error:', error);
+    throw new Error(error.message);
+  }
 }
 
 export async function fetchProductsDB(businessId: string): Promise<Product[]> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.getProducts(businessId);
   }
 
@@ -396,16 +380,15 @@ export async function fetchProductsDB(businessId: string): Promise<Product[]> {
     .from('products')
     .select('*')
     .eq('business_id', businessId)
-    .order('sort_order', { ascending: true });
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
 
-  if (error || !data || data.length === 0) {
-    return mockStore.getProducts(businessId);
-  }
-  return data as Product[];
+  if (error) console.error('fetchProductsDB error:', error);
+  return (data as Product[]) || [];
 }
 
 export async function addProductDB(productData: Omit<Product, 'id' | 'created_at'>): Promise<Product> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.addProduct(productData);
   }
 
@@ -415,12 +398,15 @@ export async function addProductDB(productData: Omit<Product, 'id' | 'created_at
     .select()
     .single();
 
-  if (error || !data) return mockStore.addProduct(productData);
+  if (error || !data) {
+    console.error('addProductDB error:', error);
+    throw new Error(error?.message || 'Ürün eklenemedi.');
+  }
   return data as Product;
 }
 
 export async function updateProductDB(id: string, updates: Partial<Product>): Promise<Product> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.updateProduct(id, updates);
   }
 
@@ -431,17 +417,23 @@ export async function updateProductDB(id: string, updates: Partial<Product>): Pr
     .select()
     .single();
 
-  if (error || !data) return mockStore.updateProduct(id, updates);
+  if (error || !data) {
+    console.error('updateProductDB error:', error);
+    throw new Error(error?.message || 'Ürün güncellenemedi.');
+  }
   return data as Product;
 }
 
 export async function deleteProductDB(id: string): Promise<void> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     mockStore.deleteProduct(id);
     return;
   }
-  await supabase.from('products').delete().eq('id', id);
-  mockStore.deleteProduct(id);
+  const { error } = await supabase.from('products').delete().eq('id', id);
+  if (error) {
+    console.error('deleteProductDB error:', error);
+    throw new Error(error.message);
+  }
 }
 
 // -------------------------------------------------------------------
@@ -449,7 +441,7 @@ export async function deleteProductDB(id: string): Promise<void> {
 // -------------------------------------------------------------------
 
 export async function fetchAllProfilesAdmin(): Promise<Profile[]> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.getProfiles().filter(p => p.role === 'BUSINESS');
   }
 
@@ -459,12 +451,12 @@ export async function fetchAllProfilesAdmin(): Promise<Profile[]> {
     .eq('role', 'BUSINESS')
     .order('created_at', { ascending: false });
 
-  if (error || !data) return mockStore.getProfiles().filter(p => p.role === 'BUSINESS');
-  return data as Profile[];
+  if (error) console.error('fetchAllProfilesAdmin error:', error);
+  return (data as Profile[]) || [];
 }
 
 export async function fetchAuditLogsDB(): Promise<AuditLog[]> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.getAuditLogs();
   }
 
@@ -473,12 +465,17 @@ export async function fetchAuditLogsDB(): Promise<AuditLog[]> {
     .select('*')
     .order('created_at', { ascending: false });
 
-  if (error || !data) return mockStore.getAuditLogs();
-  return data as AuditLog[];
+  if (error) console.error('fetchAuditLogsDB error:', error);
+  return ((data as AuditLog[]) || []).map(log => ({
+    ...log,
+    admin_name: log.admin_name || log.details?.admin_name || null,
+    target_business_name: log.target_business_name || log.details?.target_business_name || null,
+  }));
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function addAuditLogDB(admin: Profile, targetId: string, targetName: string, action: string, details?: any): Promise<AuditLog> {
-  if (!supabase || !isSupabaseConfigured) {
+  if (!supabase) {
     return mockStore.addAuditLog(admin, targetId, targetName, action, details);
   }
 
@@ -486,7 +483,7 @@ export async function addAuditLogDB(admin: Profile, targetId: string, targetName
     admin_id: admin.id,
     target_business_id: targetId,
     action,
-    details
+    details: { ...(details || {}), admin_name: admin.name, target_business_name: targetName },
   };
 
   const { data, error } = await supabase
@@ -495,6 +492,18 @@ export async function addAuditLogDB(admin: Profile, targetId: string, targetName
     .select()
     .single();
 
-  if (error || !data) return mockStore.addAuditLog(admin, targetId, targetName, action, details);
+  if (error || !data) {
+    console.error('addAuditLogDB error:', error);
+    return {
+      id: `local-${Date.now()}`,
+      admin_id: admin.id,
+      admin_name: admin.name,
+      target_business_id: targetId,
+      target_business_name: targetName,
+      action,
+      details,
+      created_at: new Date().toISOString(),
+    };
+  }
   return data as AuditLog;
 }

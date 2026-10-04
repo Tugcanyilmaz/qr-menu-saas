@@ -1,13 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { loginUser } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import { LogIn, KeyRound, Mail, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -26,14 +24,11 @@ export default function LoginPage() {
     try {
       const sessionUser = await loginUser(email, password);
       
-      if (sessionUser.role === 'ADMIN') {
-        router.push('/admin');
-      } else {
-        router.push('/dashboard');
-      }
-    } catch (err: any) {
+      // Tam sayfa yönlendirme: Navbar yeni oturumu (ve çıkış butonunu) hemen göstersin
+      window.location.href = sessionUser.role === 'ADMIN' ? '/admin' : '/dashboard';
+    } catch (err) {
       console.error('Login failed:', err);
-      setError(err.message || 'Giriş yapılamadı. Şifre veya e-posta hatalı olabilir.');
+      setError((err as Error).message || 'Giriş yapılamadı. Şifre veya e-posta hatalı olabilir.');
     } finally {
       setLoading(false);
     }

@@ -174,6 +174,14 @@ export default function AdminBusinessDetailPage() {
           <span>İşletme Listesine Dön</span>
         </Link>
 
+        <Link
+          href={`/admin/business/${business.id}/menu`}
+          className="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+        >
+          <Utensils className="w-3.5 h-3.5" />
+          <span>Menüyü Tam Düzenle (Kategori & Ürün Ekle/Sil)</span>
+        </Link>
+
         {savedSuccess && (
           <span className="flex items-center space-x-1.5 text-xs text-emerald-400 font-semibold bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
             <CheckCircle2 className="w-4 h-4" />
